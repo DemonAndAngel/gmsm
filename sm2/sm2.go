@@ -114,7 +114,7 @@ func (pub *PublicKey) Sm3Digest(msg, uid []byte) ([]byte, error) {
 	return e.Bytes(), nil
 }
 
-//****************************Encryption algorithm****************************//
+// ****************************Encryption algorithm****************************//
 func (pub *PublicKey) EncryptAsn1(data []byte, random io.Reader) ([]byte, error) {
 	return EncryptAsn1(pub, data, random)
 }
@@ -123,7 +123,7 @@ func (priv *PrivateKey) DecryptAsn1(data []byte) ([]byte, error) {
 	return DecryptAsn1(priv, data)
 }
 
-//**************************Key agreement algorithm**************************//
+// **************************Key agreement algorithm**************************//
 // KeyExchangeB 协商第二部，用户B调用， 返回共享密钥k
 func KeyExchangeB(klen int, ida, idb []byte, priB *PrivateKey, pubA *PublicKey, rpri *PrivateKey, rpubA *PublicKey) (k, s1, s2 []byte, err error) {
 	return keyExchange(klen, ida, idb, priB, pubA, rpri, rpubA, false)
@@ -214,12 +214,12 @@ func Sm2Verify(pub *PublicKey, msg, uid []byte, r, s *big.Int) bool {
 }
 
 /*
-    za, err := ZA(pub, uid)
-	if err != nil {
-		return
-	}
-	e, err := msgHash(za, msg)
-	hash=e.getBytes()
+	    za, err := ZA(pub, uid)
+		if err != nil {
+			return
+		}
+		e, err := msgHash(za, msg)
+		hash=e.getBytes()
 */
 func Verify(pub *PublicKey, hash []byte, r, s *big.Int) bool {
 	c := pub.Curve
@@ -287,9 +287,9 @@ func Encrypt(pub *PublicKey, data []byte, random io.Reader, mode int) ([]byte, e
 		c = append(c, x1Buf...) // x分量
 		c = append(c, y1Buf...) // y分量
 		tm := []byte{}
-		tm = append(tm, x2Buf...)
+		tm = append(tm, sm3.FormatByte(x2Buf)...)
 		tm = append(tm, data...)
-		tm = append(tm, y2Buf...)
+		tm = append(tm, sm3.FormatByte(y2Buf)...)
 		h := sm3.Sm3Sum(tm)
 		c = append(c, h...)
 		ct, ok := kdf(length, x2Buf, y2Buf) // 密文
@@ -363,9 +363,9 @@ func Decrypt(priv *PrivateKey, data []byte, mode int) ([]byte, error) {
 		c[i] ^= data[i+96]
 	}
 	tm := []byte{}
-	tm = append(tm, x2Buf...)
+	tm = append(tm, sm3.FormatByte(x2Buf)...)
 	tm = append(tm, c...)
-	tm = append(tm, y2Buf...)
+	tm = append(tm, sm3.FormatByte(y2Buf)...)
 	h := sm3.Sm3Sum(tm)
 	if bytes.Compare(h, data[64:96]) != 0 {
 		return c, errors.New("Decrypt: failed to decrypt")
@@ -447,15 +447,14 @@ func ZA(pub *PublicKey, uid []byte) ([]byte, error) {
 		return []byte{}, errors.New("SM2: uid too large")
 	}
 	Entla := uint16(8 * uidLen)
-	za.Write([]byte{byte((Entla >> 8) & 0xFF)})
-	za.Write([]byte{byte(Entla & 0xFF)})
+	za.Write(sm3.FormatByte([]byte{byte((Entla >> 8) & 0xFF), byte(Entla & 0xFF)}))
 	if uidLen > 0 {
-		za.Write(uid)
+		za.Write(sm3.FormatByte(uid))
 	}
-	za.Write(sm2P256ToBig(&sm2P256.a).Bytes())
-	za.Write(sm2P256.B.Bytes())
-	za.Write(sm2P256.Gx.Bytes())
-	za.Write(sm2P256.Gy.Bytes())
+	za.Write(sm3.FormatByte(sm2P256ToBig(&sm2P256.a).Bytes()))
+	za.Write(sm3.FormatByte(sm2P256.B.Bytes()))
+	za.Write(sm3.FormatByte(sm2P256.Gx.Bytes()))
+	za.Write(sm3.FormatByte(sm2P256.Gy.Bytes()))
 
 	xBuf := pub.X.Bytes()
 	yBuf := pub.Y.Bytes()
@@ -465,8 +464,8 @@ func ZA(pub *PublicKey, uid []byte) ([]byte, error) {
 	if n := len(yBuf); n < 32 {
 		yBuf = append(zeroByteSlice()[:32-n], yBuf...)
 	}
-	za.Write(xBuf)
-	za.Write(yBuf)
+	za.Write(sm3.FormatByte(xBuf))
+	za.Write(sm3.FormatByte(yBuf))
 	return za.Sum(nil)[:32], nil
 }
 
@@ -594,7 +593,7 @@ func intToBytes(x int) []byte {
 
 func kdf(length int, x ...[]byte) ([]byte, bool) {
 	var c []byte
-
+	x = append([][]byte{{0x04}}, x...)
 	ct := 1
 	h := sm3.New()
 	for i, j := 0, (length+31)/32; i < j; i++ {
